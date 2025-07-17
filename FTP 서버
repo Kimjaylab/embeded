@@ -1,0 +1,126 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/socket.h>
+#include <sys/sendfile.h>
+#include <netinet/in.h>
+#include <fcntl.h>
+
+int tcp_listen(int host, int port, int backlog)
+{
+    int sd;                                                // 소켓 디스크립터
+    struct sockaddr_in servaddr;                           // 서버 주소 구조체
+
+    sd = socket(AF_INET, SOCK_STREAM, 0);                  // TCP 소켓 생성
+    if (sd == -1)
+    {
+        perror("socket fail");                             // 소켓 생성 실패 시 메시지 출력
+        exit(1);                                           // 프로그램 종료
+    }
+
+    bzero((char *)&servaddr, sizeof(servaddr));            // servaddr 구조체 초기화
+    servaddr.sin_family = AF_INET;                         // IPv4 설정
+    servaddr.sin_addr.s_addr = htonl(host);                // 호스트 주소 설정
+    servaddr.sin_port = htons(port);                       // 포트 번호 설정
+
+    if (bind(sd, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0)
+    {
+        perror("bind fail");                               // 바인딩 실패 시 메시지 출력
+        exit(1);                                           // 프로그램 종료
+    }
+
+    listen(sd, backlog);                                   // 연결 요청 대기 상태 진입
+    return sd;                                             // 리스닝 소켓 디스크립터 반환
+}
+
+int main(int argc, char* argv[])
+{
+    struct sockaddr_in server, client;                      // 서버와 클라이언트 소켓 주소 구조체
+    struct stat obj;                                        // 파일 정보 구조체
+    int sock1, sock2;                                       // 소켓 디스크립터
+    char buf[100], command[5], filename[20];                // 버퍼, 명령어, 파일 이름 저장 배열
+    int k, i, size, len, c;                                 // 반복문 변수, 크기, 길이 등
+    int filehandle;                                         // 파일 디스크립터
+
+    if (argc != 2) {
+        printf("Usage : %s port\n", argv[0]);               // 포트 번호 인자가 없으면 사용법 출력
+        exit(1);                                            // 종료
+    }
+
+    sock1 = tcp_listen(INADDR_ANY, atoi(argv[1]), 5);       // 리스닝 소켓 생성
+    printf("FTP server listening..\n");                     // 서버 시작 메시지 출력
+    len = sizeof(client);                                   // 클라이언트 주소 크기 설정
+    sock2 = accept(sock1, (struct sockaddr *)&client, &len); // 클라이언트 연결 수락
+
+    while (1)
+    {
+        recv(sock2, buf, 100, 0);                           // 클라이언트로부터 명령어 수신
+        sscanf(buf, "%s", command);                         // 명령어 추출
+
+        if (!strcmp(command, "ls")) {                       // "ls" 명령 처리
+            system("ls > temps.txt");                       // 현재 디렉토리 리스트를 temps.txt에 저장
+            stat("temps.txt", &obj);                        // 파일 크기 얻기
+            size = obj.st_size;                             // 크기 변수에 저장
+            send(sock2, &size, sizeof(int), 0);             // 클라이언트에게 파일 크기 전송
+            filehandle = open("temps.txt", O_RDONLY);       // 파일 열기
+            sendfile(sock2, filehandle, NULL, size);        // 클라이언트로 파일 전송
+        }
+
+        else if (!strcmp(command, "get")) {                 // "get" 명령 처리
+            sscanf(buf, "%s%s", filename, filename);        // 파일 이름 추출
+            stat(filename, &obj);                           // 파일 정보 확인
+            filehandle = open(filename, O_RDONLY);          // 파일 열기
+            size = obj.st_size;                             // 크기 저장
+            if (filehandle == -1) size = 0;                 // 파일 없으면 크기 0
+            send(sock2, &size, sizeof(int), 0);             // 크기 전송
+            if (size) sendfile(sock2, filehandle, NULL, size); // 파일 전송
+        }
+
+        else if (!strcmp(command, "put")) {                 // "put" 명령 처리
+            int c = 0, len;
+            char* f;
+            sscanf(buf + strlen(command), "%s", filename);  // 파일 이름 추출
+            recv(sock2, &size, sizeof(int), 0);             // 파일 크기 수신
+
+            while (1) {
+                filehandle = open(filename, O_CREAT | O_EXCL | O_WRONLY, 0666); // 파일 생성
+                if (filehandle == -1)                                          // 중복이면 이름 뒤에 "_1" 추가
+                    sprintf(filename + strlen(filename), "_1");
+                else break;
+            }
+
+            f = malloc(size);                             // 파일 크기만큼 메모리 할당
+            recv(sock2, f, size, 0);                       // 파일 내용 수신
+            c = write(filehandle, f, size);                // 파일에 쓰기
+            close(filehandle);                             // 파일 닫기
+            send(sock2, &c, sizeof(int), 0);               // 쓰기 결과 전송
+        }
+
+        else if (!strcmp(command, "pwd")) {                // "pwd" 명령 처리
+            system("pwd>temp.txt");                        // 현재 경로 temp.txt에 저장
+            i = 0;
+            FILE* f = fopen("temp.txt", "r");              // 파일 열기
+            while (!feof(f))                               // 파일 끝까지 읽기
+                buf[i++] = fgetc(f);                       // 한 글자씩 버퍼에 저장
+            buf[i - 1] = '\0';                             // 마지막 개행 문자 제거
+            fclose(f);                                     // 파일 닫기
+            send(sock2, buf, 100, 0);                      // 결과 전송
+        }
+
+        else if (!strcmp(command, "cd")) {                 // "cd" 명령 처리
+            if (chdir(buf + 3) == 0) c = 1;                // 디렉토리 이동 성공 여부 저장
+            else c = 0;
+            send(sock2, &c, sizeof(int), 0);               // 결과 전송
+        }
+
+        else if (!strcmp(command, "bye") || !strcmp(command, "quit")) { // 종료 명령 처리
+            printf("FTP server quitting..\n");             // 종료 메시지 출력
+            i = 1;
+            send(sock2, &i, sizeof(int), 0);               // 클라이언트에 종료 신호 전송
+            exit(0);                                       // 프로그램 종료
+        }
+    }
+
+    return 0;
+}
