@@ -1,0 +1,60 @@
+#include <stdio.h>
+#include <unistd.h>
+#include <pthread.h>
+
+int ncount;                                         // 스레드 간 공유되는 자원 (공유 변수)
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER; // 뮤텍스 객체 초기화
+
+// 스레드 함수 1
+void* do_loop1(void* data)
+{
+    int i;
+    pthread_mutex_lock(&mutex);                    // 뮤텍스 잠금 (임계영역 진입)
+    for (i = 0; i < 10; i++)
+    {
+        printf("loop1 : %d\n", ncount);            // 공유 자원 출력
+        ncount++;                                  // 공유 자원 증가
+        sleep(1);                                  // 1초 대기
+    }
+    pthread_mutex_unlock(&mutex);                  // 뮤텍스 해제 (임계영역 종료)
+    return NULL;
+}
+
+// 스레드 함수 2
+void* do_loop2(void* data)
+{
+    int i;
+    pthread_mutex_lock(&mutex);                    // 뮤텍스 잠금 (do_loop1이 해제할 때까지 대기)
+    for (i = 0; i < 10; i++)
+    {
+        printf("loop2 : %d\n", ncount);            // 공유 자원 출력
+        ncount++;                                  // 공유 자원 증가
+        sleep(1);                                  // 1초 대기
+    }
+    pthread_mutex_unlock(&mutex);                  // 뮤텍스 해제
+    return NULL;
+}
+
+int main(void)
+{
+    int thr_id;                                    // 스레드 ID 변수
+    pthread_t p_thread[2];                         // 스레드 핸들 배열
+    int status;                                    // 종료 상태 저장 변수
+    int a = 1;
+
+    ncount = 0;                                    // 공유 변수 초기화
+
+    thr_id = pthread_create(&p_thread[0], NULL, do_loop1, (void*)&a); // 첫 번째 스레드 생성
+    sleep(1);                                      // 두 번째 스레드보다 먼저 실행되도록 대기
+
+    thr_id = pthread_create(&p_thread[1], NULL, do_loop2, (void*)&a); // 두 번째 스레드 생성
+
+    pthread_join(p_thread[0], (void*)&status);     // 첫 번째 스레드 종료 대기
+    pthread_join(p_thread[1], (void*)&status);     // 두 번째 스레드 종료 대기
+
+    status = pthread_mutex_destroy(&mutex);        // 뮤텍스 자원 해제
+    printf("code = %d\n", status);                 // 뮤텍스 해제 결과 출력
+    printf("programing is end\n");                 // 프로그램 종료 메시지 출력
+
+    return 0;
+}
