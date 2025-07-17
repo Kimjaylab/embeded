@@ -1,0 +1,32 @@
+#include <stdio.h>        
+#include <unistd.h>       // pipe, fork, read, write 등 유닉스 시스템 호출 함수 사용을 위한 헤더
+#include <string.h>       
+#include <sys/types.h>    // pid_t 타입 정의를 위한 헤더
+
+int main(void) {
+    int fd[2], nbytes, rc = 0;                // fd: 파이프 파일 디스크립터, nbytes: 수신된 바이트 수, rc: 리턴 코드
+    pid_t childpid;                           // 자식 프로세스 ID 저장
+    char string[50];                          // 전송할 문자열 버퍼
+    char readbuffer[80];                      // 수신할 문자열 버퍼
+
+    if ((rc = pipe(fd)) < 0) {                // 파이프 생성, 실패 시 에러 출력
+        printf("Creating Pipe is Error [%d]\n", rc);
+    }
+
+    if ((childpid = fork()) == -1) {          // 자식 프로세스 생성, 실패 시 에러 출력
+        perror("fork");
+        return 0;
+    }
+
+    if (childpid == 0) {                      // 자식 프로세스
+        printf("child process send : ");      // 전송할 메시지 입력 요청
+        fgets(string, sizeof(string), stdin); // 문자열 입력 받음
+        write(fd[1], string, (strlen(string) + 1)); // 파이프의 쓰기 단자로 문자열 전송
+        return 0;
+    } else {                                  // 부모 프로세스
+        nbytes = read(fd[0], readbuffer, sizeof(readbuffer)); // 파이프의 읽기 단자로 메시지 수신
+        printf("parent process received : %s\n", readbuffer); // 수신된 메시지 출력
+    }
+
+    return 0;
+}
