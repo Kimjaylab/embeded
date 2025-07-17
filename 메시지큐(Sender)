@@ -1,0 +1,51 @@
+#include <stdio.h>            
+#include <stdlib.h>           // exit 함수 등을 위한 헤더
+#include <string.h>           
+#include <unistd.h>           // sleep 함수 등을 위한 헤더
+#include <sys/types.h>        // IPC 관련 자료형을 위한 헤더
+#include <sys/ipc.h>          // IPC 키 생성 및 접근을 위한 헤더
+#include <sys/msg.h>          // 메시지 큐 함수 사용을 위한 헤더
+
+#define BUFFER_SIZE 1024      // 메시지 버퍼의 최대 크기 정의
+
+typedef struct {              // 메시지 버퍼 구조체 정의
+    long msgtype;             // 메시지 타입 (반드시 양수, long형)
+    int value;                // 전송할 정수 값
+    char buf[BUFFER_SIZE];    // 메시지 내용 버퍼
+} msgbuf;
+
+int main( )
+{
+    int cnt = 0;              // 메시지 전송 횟수 카운터
+    int key_id;               // 메시지 큐 식별자
+    msgbuf msg;               // 메시지 버퍼 구조체 변수
+    msg.msgtype = 1;          // 메시지 타입 지정
+
+    // 메시지 큐 생성 (키: 1234, 플래그: 생성 또는 접근 | 권한: 0666)
+    key_id = msgget((key_t)1234, IPC_CREAT | 0666);
+    if (key_id == -1)         // 메시지 큐 생성 실패 시
+    {
+        printf("Message Get Failed!\n");  // 에러 메시지 출력
+        exit(0);                          // 프로그램 종료
+    }
+
+    while (1)                            // 메시지 전송 루프
+    {
+        msg.value = ++cnt;               // value 값 증가 및 저장
+        if (cnt >= 10) {                 // 10번 전송했으면 종료
+            printf("Message Sending Finished!\n");  // 완료 메시지 출력
+            break;
+        }
+
+        // 메시지 전송 (비차단 모드: 큐가 꽉 차면 실패)
+        if (msgsnd(key_id, &msg, sizeof(msg), IPC_NOWAIT) == -1) {
+            printf("Message Sending Failed!\n");  // 실패 메시지 출력
+            exit(0);                              // 프로그램 종료
+        }
+
+        printf("value: %d\n", msg.value);         // 전송한 값 출력
+        sleep(1);                                 // 1초 대기
+    }
+
+    exit(0);                                      // 정상 종료
+}
