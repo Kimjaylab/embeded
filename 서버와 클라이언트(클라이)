@@ -1,45 +1,57 @@
-#pragma comment(lib, "ws2_32.lib")
-#define _WINSOCK_DEPRECATED_NO_WARNINGS
+#pragma comment(lib, "ws2_32.lib")                         // ws2_32.lib 라이브러리 링크
+#define _WINSOCK_DEPRECATED_NO_WARNINGS                    // inet_addr 등 호환성 경고 무시
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <winsock2.h>
-void ErrorHandling(const char* message);
-int main(int argc, char* argv[ ])
-{
-WSADATA wsaData;
-SOCKET hSocket;
-SOCKADDR_IN servAddr;
-char message[30];
-int strLen;
-if (argc != 3)
-{
-printf("Usage : %s <IP> <port>\n", argv[0]);
-exit(1);
-}
-if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
-ErrorHandling("WSAStartup( ) error!");
 
-hSocket = socket(PF_INET, SOCK_STREAM, 0);
-if (hSocket == INVALID_SOCKET)
-ErrorHandling("socket( ) error");
-memset(&servAddr, 0, sizeof(servAddr));
-servAddr.sin_family = AF_INET;
-servAddr.sin_addr.s_addr = inet_addr(argv[1]);
-servAddr.sin_port = htons(atoi(argv[2]));
-if (connect(hSocket, (SOCKADDR*)&servAddr, sizeof(servAddr)) == SOCKET_ERROR)
-ErrorHandling("connect( ) error!");
-strLen = recv(hSocket, message, sizeof(message) - 1, 0);
-if (strLen == -1)
-ErrorHandling("read( ) error!");
-printf("Message from server: %s \n", message);
-closesocket(hSocket);
-WSACleanup( );
-return 0;
+void ErrorHandling(const char* message);                   // 에러 출력 함수 선언
+
+int main(int argc, char* argv[])
+{
+    WSADATA wsaData;                                       // 윈속 초기화 정보 구조체
+    SOCKET hSocket;                                        // 소켓 핸들
+    SOCKADDR_IN servAddr;                                  // 서버 주소 구조체
+    char message[30];                                      // 서버로부터 받을 메시지
+    int strLen;                                            // 수신한 문자열 길이
+
+    if (argc != 3)                                         // 실행 인자 체크 (IP, PORT)
+    {
+        printf("Usage : %s <IP> <port>\n", argv[0]);
+        exit(1);                                           // 잘못된 실행 인자 시 종료
+    }
+
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)         // WinSock 라이브러리 초기화
+        ErrorHandling("WSAStartup( ) error!");
+
+    hSocket = socket(PF_INET, SOCK_STREAM, 0);             // TCP 소켓 생성
+    if (hSocket == INVALID_SOCKET)
+        ErrorHandling("socket( ) error");
+
+    memset(&servAddr, 0, sizeof(servAddr));                // 서버 주소 구조체 초기화
+    servAddr.sin_family = AF_INET;                         // IPv4
+    servAddr.sin_addr.s_addr = inet_addr(argv[1]);         // 문자열 IP → 32비트 정수 IP로 변환
+    servAddr.sin_port = htons(atoi(argv[2]));              // 문자열 포트 → 정수 → 네트워크 바이트 순서
+
+    if (connect(hSocket, (SOCKADDR*)&servAddr, sizeof(servAddr)) == SOCKET_ERROR)
+        ErrorHandling("connect( ) error!");                // 서버에 연결 요청
+
+    strLen = recv(hSocket, message, sizeof(message) - 1, 0); // 서버로부터 데이터 수신
+    if (strLen == -1)
+        ErrorHandling("read( ) error!");                   // 수신 실패 시 에러
+
+    message[strLen] = '\0';                                // 수신 문자열 종료 문자 추가
+    printf("Message from server: %s \n", message);         // 받은 메시지 출력
+
+    closesocket(hSocket);                                  // 소켓 닫기
+    WSACleanup();                                          // WinSock 종료
+    return 0;                                              // 프로그램 정상 종료
 }
 
 void ErrorHandling(const char* message)
 {
-fputs(message, stderr);
-fputc('\n', stderr);
-exit(1);
+    fputs(message, stderr);                                // 에러 메시지 출력
+    fputc('\n', stderr);                                   // 줄 바꿈
+    exit(1);                                               // 프로그램 종료
 }
+
