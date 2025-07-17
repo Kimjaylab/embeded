@@ -1,0 +1,155 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <sys/socket.h>
+#include <sys/sendfile.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <fcntl.h>
+#define MAXLINE 511  // 최대 버퍼 길이 정의
+
+// 서버에 TCP 연결을 생성하는 함수
+int tcp_connect(int af, char* servip, unsigned short port)
+{
+    struct sockaddr_in servaddr;
+    int s;
+    if ((s = socket(af, SOCK_STREAM, 0)) < 0) // 소켓 생성 실패 시 -1 반환
+        return -1;
+    bzero((char *)&servaddr, sizeof(servaddr)); // 주소 구조체 초기화
+    servaddr.sin_family = af;
+    inet_pton(AF_INET, servip, &servaddr.sin_addr); // IP 주소 설정
+    servaddr.sin_port = htons(port); // 포트 설정
+    if (connect(s, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) // 서버에 연결 요청
+        return -1;
+    return s; // 연결 성공 시 소켓 디스크립터 반환
+}
+
+int main(int argc, char* argv[])
+{
+    struct sockaddr_in server;
+    struct stat obj;
+    int sock;
+    char bufmsg[MAXLINE] = { 0 }; // 사용자 입력 명령어
+    char buf[100] = { 0 }, command[5] = { 0 }, filename[MAXLINE] = { 0 }, *f; // 명령어 처리용
+    char temp[20] = { 0 };
+    int k, size, status;
+    int filehandle;
+
+    if (argc != 3) { // 인자 부족 시
+        printf("Usage : %s server_ip port\n", argv[0]); // 사용법 출력
+        exit(1);
+    }
+
+    sock = tcp_connect(AF_INET, argv[1], atoi(argv[2])); // 서버 연결 시도
+    if (sock == -1) {
+        printf("tcp_connect fail");
+        exit(1);
+    }
+
+    while (1) {
+        printf("Command : get, put, pwd, ls, cd, quit\n"); // 사용 가능한 명령어 표시
+        printf("client> ");
+        fgets(bufmsg, MAXLINE, stdin); // 명령어 입력 받기
+
+        if (!strcmp(bufmsg, "get\n")) { // get 명령어 처리
+            printf("Download File Name : ");
+            scanf("%s", filename); // 다운로드할 파일 이름 입력
+            fgets(temp, MAXLINE, stdin); // 엔터 제거
+            strcpy(buf, "get ");
+            strcat(buf, filename); // 명령어 구성
+            send(sock, buf, 100, 0); // 서버에 get 명령어 전송
+            recv(sock, &size, sizeof(int), 0); // 서버로부터 파일 크기 수신
+
+            if (!size) { // 파일 없을 경우
+                printf("file not found\n");
+                continue;
+            }
+
+            f = malloc(size); // 파일 크기만큼 메모리 할당
+            recv(sock, f, size, 0); // 서버로부터 파일 내용 수신
+
+            while (1) { // 동일한 이름이 존재하면 이름 뒤에 "_1" 추가
+                filehandle = open(filename, O_CREAT | O_EXCL | O_WRONLY, 0666);
+                if (filehandle == -1)
+                    sprintf(filename + strlen(filename), "_1");
+                else
+                    break;
+            }
+
+            write(filehandle, f, size, 0); // 받은 데이터를 파일로 저장
+            close(filehandle);
+            printf("download completed\n");
+        }
+
+        else if (!strcmp(bufmsg, "put\n")) { // put 명령어 처리
+            printf("Upload File Name : ");
+            scanf("%s", filename); // 업로드할 파일 이름 입력
+            fgets(temp, MAXLINE, stdin); // 엔터 제거
+
+            filehandle = open(filename, O_RDONLY); // 파일 열기
+            if (filehandle == -1) { // 파일 없을 경우
+                printf("file not found\n");
+                continue;
+            }
+
+            strcpy(buf, "put ");
+            strcat(buf, filename); // 명령어 구성
+            send(sock, buf, 100, 0); // 서버에 전송
+            stat(filename, &obj); // 파일 크기 확인
+            size = obj.st_size;
+            send(sock, &size, sizeof(int), 0); // 크기 전송
+            sendfile(sock, filehandle, NULL, size); // 파일 전송
+            recv(sock, &status, sizeof(int), 0); // 서버 응답 수신
+
+            if (status) // 업로드 성공 여부 확인
+                printf("upload completed\n");
+            else
+                printf("upload failed\n");
+        }
+
+        else if (!strcmp(bufmsg, "pwd\n")) { // pwd 명령어 처리
+            strcpy(buf, "pwd");
+            send(sock, buf, 100, 0); // 서버에 전송
+            recv(sock, buf, 100, 0); // 서버 응답 수신
+            printf("\n--The path of the Remote Directory--\n%s", buf);
+        }
+
+        else if (!strcmp(bufmsg, "ls\n")) { // ls 명령어 처리
+            strcpy(buf, "ls");
+            send(sock, buf, 100, 0); // 서버에 전송
+            recv(sock, &size, sizeof(int), 0); // 크기 수신
+            f = malloc(size); // 메모리 할당
+            recv(sock, f, size, 0); // 내용 수신
+            filehandle = creat("temp.txt", 0644); // 임시 파일 생성
+            write(filehandle, f, size, 0); // 파일 내용 저장
+            close(filehandle);
+            printf("\n--The Remote Directory List--\n");
+            system("cat temp.txt"); // 임시 파일 출력
+        }
+
+        else if (!strcmp(bufmsg, "cd\n")) { // cd 명령어 처리
+            strcpy(buf, "cd ");
+            printf("change directory path name : ");
+            scanf("%s", buf + 3); // 이동할 경로 입력
+            fgets(temp, MAXLINE, stdin); // 엔터 제거
+            send(sock, buf, 100, 0); // 명령어 전송
+            recv(sock, &status, sizeof(int), 0); // 응답 수신
+            if (status)
+                printf("change directory completed\n");
+            else
+                printf("change directory failed\n");
+        }
+
+        else if (!strcmp(bufmsg, "quit\n")) { // quit 명령어 처리
+            strcpy(buf, "quit");
+            send(sock, buf, 100, 0); // 서버에 종료 요청
+            recv(sock, &status, 100, 0); // 서버 응답 수신
+            if (status) {
+                printf("Server closed\n"); // 정상 종료
+                exit(0);
+            }
+            printf("Server close failed\n"); // 실패 시 메시지 출력
+        }
+    }
+}
