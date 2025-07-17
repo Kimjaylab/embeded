@@ -1,0 +1,52 @@
+#include <pthread.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+
+// 스레드 함수 정의
+void* t_function(void* data)
+{
+    int id;                                  // 스레드 식별자
+    int i = 0;
+    id = *((int*)data);                      // 아규먼트를 정수로 변환
+
+    while (i <= 10)                          // 0부터 10까지 반복
+    {
+        printf("%d : %d\n", id, i);          // 스레드 ID와 카운터 출력
+        i++;
+        sleep(1);                            // 1초 대기
+    }
+
+    return NULL;                             // 반환값 없음
+}
+
+int main(void)
+{
+    pthread_t p_thread[2];                   // pthread_t 타입의 배열 (2개의 스레드)
+    int thr_id;                              // 스레드 ID 저장 변수
+    int status;                              // pthread_join 반환값 저장용
+    int a = 1;                               // 첫 번째 스레드에 전달할 값
+    int b = 2;                               // 두 번째 스레드에 전달할 값
+
+    // 첫 번째 스레드 생성
+    thr_id = pthread_create(&p_thread[0], NULL, t_function, (void *)&a);
+    if (thr_id < 0)
+    {
+        perror("thread create error : ");    // 스레드 생성 실패 시 에러 출력
+        exit(0);                              // 프로그램 종료
+    }
+
+    // 두 번째 스레드 생성
+    thr_id = pthread_create(&p_thread[1], NULL, t_function, (void *)&b);
+    if (thr_id < 0)
+    {
+        perror("thread create error : ");    // 스레드 생성 실패 시 에러 출력
+        exit(0);                              // 프로그램 종료
+    }
+
+    // 각 스레드가 종료될 때까지 대기
+    pthread_join(p_thread[0], (void**)&status); // 첫 번째 스레드 종료 대기
+    pthread_join(p_thread[1], (void**)&status); // 두 번째 스레드 종료 대기
+
+    return 0;                                 // 프로그램 정상 종료
+}
