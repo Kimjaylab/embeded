@@ -1,0 +1,42 @@
+#include <stdio.h>            
+#include <stdlib.h>           // exit 함수 등을 위한 헤더
+#include <string.h>           
+#include <unistd.h>           // 유닉스 표준 함수 사용을 위한 헤더
+#include <sys/types.h>        // IPC 관련 자료형을 위한 헤더
+#include <sys/ipc.h>          // IPC 키 생성/관리 헤더
+#include <sys/msg.h>          // 메시지 큐 관련 함수 헤더
+
+#define BUFFER_SIZE 1024      // 메시지 버퍼 최대 크기
+
+typedef struct {              // 메시지 버퍼 구조체 정의
+    long msgtype;             // 메시지 타입 (반드시 양수여야 함)
+    int value;                // 송신자가 보낸 정수 값
+    char buf[BUFFER_SIZE];    // 메시지 내용 저장 버퍼
+} msgbuf;
+
+int main(void)
+{
+    int key_id;               // 메시지 큐 ID
+    msgbuf msg;               // 메시지 구조체 변수
+    msg.msgtype = 1;          // 수신할 메시지 타입 설정
+
+    // 메시지 큐 생성 또는 기존 큐 접근
+    key_id = msgget((key_t)1234, IPC_CREAT | 0666);
+    if (key_id == -1) {       // 생성 실패 시
+        printf("Message Get Failed!\n"); // 에러 출력
+        exit(0);              // 프로그램 종료
+    }
+
+    while (1) {               // 메시지 수신 루프
+        // 메시지 수신 (msgtype이 1인 것만 수신)
+        if (msgrcv(key_id, &msg, sizeof(msg), 1, 0) == -1)
+        {
+            printf("Message Receiving Finished!\n"); // 수신 실패 시 출력
+            exit(0);         // 종료
+        }
+        printf("value: %d\n", msg.value); // 받은 메시지 값 출력
+    }
+
+    printf("Message Receiving Finished!\n"); // 이 줄은 실행되지 않음
+    exit(0);             // 프로그램 종료
+}
