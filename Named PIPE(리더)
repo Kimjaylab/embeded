@@ -1,0 +1,47 @@
+#include <fcntl.h>         // 파일 열기 관련 함수 (open 등)
+#include <sys/stat.h>      // 파일 상태 확인 및 권한 관련 상수 정의
+#include <unistd.h>        // Unix 표준 함수들 (read, write, unlink 등)
+#include <stdio.h>         
+#include <stdlib.h>        // 일반 유틸리티 함수들 (exit 등)
+
+#define MSG_SIZE 80        // 메시지 최대 크기 정의
+#define PIPENAME "./named_pipe_file"   // 이름 있는 파이프 파일 경로 정의
+
+int main(void)
+{
+    char msg[MSG_SIZE];       // 수신할 메시지를 저장할 버퍼
+    int fd;                   // 파일 디스크립터
+    int nread, rc;            // nread: 읽은 바이트 수, rc: 리턴 코드
+
+    // 기존에 named pipe가 존재하면 삭제
+    if (access(PIPENAME, F_OK) == 0)    // 파일 존재 여부 확인
+    {
+        unlink(PIPENAME);              // 파일 삭제
+    }
+
+    // named pipe 생성 (읽기/쓰기 권한 0666)
+    if ((rc = mkfifo(PIPENAME, 0666)) < 0)   // FIFO special file 생성
+    {
+        printf("fail to make named pipe\n");
+        return 0;
+    }
+
+    // named pipe 열기 (읽기/쓰기 모드)
+    if ((fd = open(PIPENAME, O_RDWR)) < 0)   // 파이프 열기
+    {
+        printf("fail to open named pipe\n");
+        return 0;
+    }
+
+    while (1)   // 무한 루프를 돌며 메시지 수신
+    {
+        if ((nread = read(fd, msg, sizeof(msg))) < 0)   // 파이프에서 메시지 읽기
+        {
+            printf("fail to call read()\n");
+            return 0;
+        }
+        printf("recv: %s\n", msg);   // 수신한 메시지 출력
+    }
+
+    return 0;
+}
